@@ -92,7 +92,6 @@ services:
       - zabbix-server-mysql:zabbix-server
     ports:
       - "2022:8080"
-      - "443:8443"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 10s
