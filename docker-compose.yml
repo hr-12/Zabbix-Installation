@@ -1,0 +1,133 @@
+version: '3.4'
+
+networks:
+  network-zabbix:
+    driver: bridge
+
+#################################################################################################################################
+#Mysql_server
+#################################################################################################################################
+
+services:
+  mysql-server:
+    container_name: mysql-server
+    image: mysql:8
+    restart: unless-stopped
+    networks:
+      - network-zabbix
+    ports:
+      - '3306:3306'
+    env_file:
+      - ./.env_mysql-server
+    command:
+      - mysqld
+      - --character-set-server=utf8
+      - --collation-server=utf8_bin
+      - --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ./zbx_env/var/lib/mysql:/var/lib/mysql:rw
+#################################################################################################################################
+#Zabbix-java-gateway
+#################################################################################################################################
+
+  zabbix-java-gateway:
+    container_name: Zabbix-java-gateway
+    networks:
+      - network-zabbix
+    image: zabbix/zabbix-java-gateway
+    restart: unless-stopped
+    ports:
+    - "10052:10052"
+
+
+
+
+#################################################################################################################################
+#Zabbix-Server-Mysql
+#################################################################################################################################
+
+  zabbix-server-mysql:
+    container_name: zabbix-server-mysql
+    image: zabbix/zabbix-server-mysql
+    networks:
+      - network-zabbix
+    links:
+      - mysql-server:mysql
+      - zabbix-java-gateway:zabbix-java-gateway
+    ports:
+      - "10051:10051"
+    restart: unless-stopped
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./zbx_env/usr/lib/zabbix/alertscripts:/usr/lib/zabbix/alertscripts:ro
+      - ./zbx_env/usr/lib/zabbix/externalscripts:/usr/lib/zabbix/externalscripts:ro
+      - ./zbx_env/var/lib/zabbix/export:/var/lib/zabbix/export:rw
+      - ./zbx_env/var/lib/zabbix/modules:/var/lib/zabbix/modules:ro
+      - ./zbx_env/var/lib/zabbix/enc:/var/lib/zabbix/enc:ro
+      - ./zbx_env/var/lib/zabbix/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+      - ./zbx_env/var/lib/zabbix/mibs:/var/lib/zabbix/mibs:ro
+    env_file:
+      - ./.env_zabbix-server-mysql
+
+
+
+#################################################################################################################################
+#Zabbix-web-nginx-mysql
+#################################################################################################################################
+
+  zabbix-web-nginx-mysql:
+    container_name: zabbix-web-nginx-mysql
+    image: zabbix/zabbix-web-nginx-mysql
+    networks:
+      - network-zabbix
+    links:
+      - mysql-server:mysql
+      - zabbix-java-gateway:zabbix-java-gateway
+      - zabbix-server-mysql:zabbix-server
+    ports:
+      - "2022:8080"
+      - "443:8443"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./zbx_env/etc/ssl/nginx:/etc/ssl/nginx:ro
+      - ./zbx_env/usr/share/zabbix/modules/:/usr/share/zabbix/modules/:ro
+    restart: unless-stopped
+    env_file:
+      - ./.env_zabbix-web-nginx-mysql
+
+
+#################################################################################################################################
+#Zabbix-agent
+#################################################################################################################################
+
+  zabbix-agent:
+    container_name: zabbix-agent
+    networks:
+      - network-zabbix
+    image: zabbix/zabbix-agent
+    restart: unless-stopped
+    links:
+      - mysql-server:mysql
+      - zabbix-server-mysql:zabbix-server
+    ports:
+      - "10050:10050"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./zbx_env/etc/zabbix/zabbix_agentd.d:/etc/zabbix/zabbix_agentd.d:ro
+      - ./zbx_env/var/lib/zabbix/modules:/var/lib/zabbix/modules:ro
+      - ./zbx_env/var/lib/zabbix/enc:/var/lib/zabbix/enc:ro
+      - ./zbx_env/var/lib/zabbix/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+    env_file:
+      - ./.env_zabbix-agent
